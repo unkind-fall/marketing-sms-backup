@@ -1,0 +1,22 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "marketing-sms-backup",
+	"main": "src/index.ts",
+	"compatibility_date": "2025-11-26",
+	"observability": {
+		"enabled": true
+	},
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "sms-backup",
+			"database_id": ""
+		}
+	],
+	"triggers": {
+		"crons": ["0 0 * * *"]
+	},
+	"vars": {
+		"GDRIVE_FOLDER_ID": ""
+	}
+}
