@@ -439,3 +439,65 @@ export async function getPhoneHistoryWithSubscription(
     }
   };
 }
+
+// ============ Bulk Lookup Functions ============
+
+export interface ContactStatus {
+  contacted: boolean;
+  message_count?: number;
+  last_sent?: number;
+}
+
+export async function bulkCheckContacted(
+  db: D1Database,
+  subscriptionId: string,
+  phones: string[]
+): Promise<Record<string, ContactStatus>> {
+  if (phones.length === 0) {
+    return {};
+  }
+
+  // Build placeholders for IN clause
+  const placeholders = phones.map(() => '?').join(', ');
+
+  // Query for sent messages (direction = 'sent') from this subscription to these phones
+  const query = `
+    SELECT phone, COUNT(*) as message_count, MAX(timestamp) as last_sent
+    FROM messages
+    WHERE subscription_id = ?
+      AND direction = 'sent'
+      AND phone IN (${placeholders})
+    GROUP BY phone
+  `;
+
+  const result = await db
+    .prepare(query)
+    .bind(subscriptionId, ...phones)
+    .all<{ phone: string; message_count: number; last_sent: number }>();
+
+  // Build result map with contacted phones
+  const contactedMap = new Map<string, { message_count: number; last_sent: number }>();
+  for (const row of result.results) {
+    contactedMap.set(row.phone, {
+      message_count: row.message_count,
+      last_sent: row.last_sent
+    });
+  }
+
+  // Build final result for all requested phones
+  const results: Record<string, ContactStatus> = {};
+  for (const phone of phones) {
+    const contacted = contactedMap.get(phone);
+    if (contacted) {
+      results[phone] = {
+        contacted: true,
+        message_count: contacted.message_count,
+        last_sent: contacted.last_sent
+      };
+    } else {
+      results[phone] = { contacted: false };
+    }
+  }
+
+  return results;
+}

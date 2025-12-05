@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { getMessagesByPhone, getMessageById, getPhoneHistory, getMessagesByPhoneAndSubscription, getPhoneHistoryWithSubscription } from '../db/queries';
+import { getMessagesByPhone, getMessageById, getPhoneHistory, getMessagesByPhoneAndSubscription, getPhoneHistoryWithSubscription, bulkCheckContacted } from '../db/queries';
 import { normalizePhone } from '../lib/phone-utils';
 import type { Env } from '../index';
 
@@ -75,6 +75,44 @@ messages.get('/:id', async (c) => {
   } catch (error) {
     console.error('Get message error:', error);
     return c.json({ error: 'Failed to fetch message' }, 500);
+  }
+});
+
+messages.post('/lookup', async (c) => {
+  try {
+    const body = await c.req.json<{ subscription: string; phones: string[] }>();
+
+    if (!body.subscription) {
+      return c.json({ error: 'subscription is required' }, 400);
+    }
+
+    if (!body.phones || !Array.isArray(body.phones) || body.phones.length === 0) {
+      return c.json({ error: 'phones array is required and must not be empty' }, 400);
+    }
+
+    // Normalize all phone numbers
+    const normalizedPhones = body.phones.map(phone => normalizePhone(phone).normalized);
+
+    // Bulk check which phones have been contacted
+    const results = await bulkCheckContacted(c.env.DB, body.subscription, normalizedPhones);
+
+    // Calculate summary
+    const contacted = Object.values(results).filter(r => r.contacted).length;
+    const notContacted = Object.values(results).filter(r => !r.contacted).length;
+
+    return c.json({
+      success: true,
+      subscription_id: body.subscription,
+      results,
+      summary: {
+        total_checked: normalizedPhones.length,
+        contacted,
+        not_contacted: notContacted
+      }
+    });
+  } catch (error) {
+    console.error('Bulk lookup error:', error);
+    return c.json({ error: 'Failed to perform bulk lookup' }, 500);
   }
 });
 
