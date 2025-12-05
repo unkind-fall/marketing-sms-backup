@@ -443,15 +443,14 @@ export async function getPhoneHistoryWithSubscription(
 // ============ Bulk Lookup Functions ============
 
 export interface ContactStatus {
-  contacted: boolean;
-  message_count?: number;
-  last_sent?: number;
+  sent: number;
+  received: number;
 }
 
 export async function bulkCheckContacted(
   db: D1Database,
-  subscriptionId: string,
-  phones: string[]
+  phones: string[],
+  subscriptionId?: string
 ): Promise<Record<string, ContactStatus>> {
   if (phones.length === 0) {
     return {};
@@ -460,43 +459,44 @@ export async function bulkCheckContacted(
   // Build placeholders for IN clause
   const placeholders = phones.map(() => '?').join(', ');
 
-  // Query for sent messages (direction = 'sent') from this subscription to these phones
+  // Build query with optional subscription filter
+  const params: (string | null)[] = [...phones];
+  let subscriptionFilter = '';
+  if (subscriptionId) {
+    subscriptionFilter = 'AND subscription_id = ?';
+    params.push(subscriptionId);
+  }
+
+  // Query for both sent and received message counts per phone
   const query = `
-    SELECT phone, COUNT(*) as message_count, MAX(timestamp) as last_sent
+    SELECT phone, direction, COUNT(*) as count
     FROM messages
-    WHERE subscription_id = ?
-      AND direction = 'sent'
-      AND phone IN (${placeholders})
-    GROUP BY phone
+    WHERE phone IN (${placeholders})
+      ${subscriptionFilter}
+    GROUP BY phone, direction
   `;
 
   const result = await db
     .prepare(query)
-    .bind(subscriptionId, ...phones)
-    .all<{ phone: string; message_count: number; last_sent: number }>();
+    .bind(...params)
+    .all<{ phone: string; direction: string; count: number }>();
 
-  // Build result map with contacted phones
-  const contactedMap = new Map<string, { message_count: number; last_sent: number }>();
+  // Build result map with counts
+  const countsMap = new Map<string, { sent: number; received: number }>();
   for (const row of result.results) {
-    contactedMap.set(row.phone, {
-      message_count: row.message_count,
-      last_sent: row.last_sent
-    });
+    const existing = countsMap.get(row.phone) || { sent: 0, received: 0 };
+    if (row.direction === 'sent') {
+      existing.sent = row.count;
+    } else if (row.direction === 'received') {
+      existing.received = row.count;
+    }
+    countsMap.set(row.phone, existing);
   }
 
   // Build final result for all requested phones
   const results: Record<string, ContactStatus> = {};
   for (const phone of phones) {
-    const contacted = contactedMap.get(phone);
-    if (contacted) {
-      results[phone] = {
-        contacted: true,
-        message_count: contacted.message_count,
-        last_sent: contacted.last_sent
-      };
-    } else {
-      results[phone] = { contacted: false };
-    }
+    results[phone] = countsMap.get(phone) || { sent: 0, received: 0 };
   }
 
   return results;

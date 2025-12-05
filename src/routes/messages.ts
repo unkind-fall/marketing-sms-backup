@@ -80,11 +80,7 @@ messages.get('/:id', async (c) => {
 
 messages.post('/lookup', async (c) => {
   try {
-    const body = await c.req.json<{ subscription: string; phones: string[] }>();
-
-    if (!body.subscription) {
-      return c.json({ error: 'subscription is required' }, 400);
-    }
+    const body = await c.req.json<{ phones: string[]; subscription?: string }>();
 
     if (!body.phones || !Array.isArray(body.phones) || body.phones.length === 0) {
       return c.json({ error: 'phones array is required and must not be empty' }, 400);
@@ -93,22 +89,12 @@ messages.post('/lookup', async (c) => {
     // Normalize all phone numbers
     const normalizedPhones = body.phones.map(phone => normalizePhone(phone).normalized);
 
-    // Bulk check which phones have been contacted
-    const results = await bulkCheckContacted(c.env.DB, body.subscription, normalizedPhones);
-
-    // Calculate summary
-    const contacted = Object.values(results).filter(r => r.contacted).length;
-    const notContacted = Object.values(results).filter(r => !r.contacted).length;
+    // Bulk check sent/received counts for each phone
+    const results = await bulkCheckContacted(c.env.DB, normalizedPhones, body.subscription);
 
     return c.json({
       success: true,
-      subscription_id: body.subscription,
-      results,
-      summary: {
-        total_checked: normalizedPhones.length,
-        contacted,
-        not_contacted: notContacted
-      }
+      results
     });
   } catch (error) {
     console.error('Bulk lookup error:', error);

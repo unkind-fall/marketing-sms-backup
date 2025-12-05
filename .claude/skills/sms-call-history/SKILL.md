@@ -90,14 +90,30 @@ curl -s -H "X-API-Key: $API_KEY" "$API_URL/messages?phone=+61400000000&subscript
 
 ## Bulk Lookup
 
-Check if multiple recipients have been contacted from a specific subscription in a single query:
+Check sent/received message counts for multiple phone numbers:
 ```bash
 curl -s -X POST -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" \
   "$API_URL/messages/lookup" \
-  -d '{"subscription": "1", "phones": ["+61400000001", "+61400000002", "+61400000003"]}' | jq .
+  -d '{"phones": ["+61400000001", "+61400000002", "+61400000003"]}' | jq .
 ```
 
-Response includes for each phone: whether contacted, message count, and last sent timestamp.
+Optionally filter by subscription:
+```bash
+curl -s -X POST -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" \
+  "$API_URL/messages/lookup" \
+  -d '{"phones": ["+61400000001", "+61400000002"], "subscription": "1"}' | jq .
+```
+
+Response format:
+```json
+{
+  "success": true,
+  "results": {
+    "+61400000001": { "sent": 3, "received": 1 },
+    "+61400000002": { "sent": 0, "received": 0 }
+  }
+}
+```
 
 ## Response Data
 
