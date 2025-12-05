@@ -4,6 +4,8 @@ import webhook from './routes/webhook';
 import upload from './routes/upload';
 import phones from './routes/phones';
 import messages from './routes/messages';
+import calls from './routes/calls';
+import subscriptions from './routes/subscriptions';
 import { syncFromGoogleDrive } from './scheduled/sync-gdrive';
 
 export interface Env {
@@ -49,6 +51,8 @@ app.route('/webhook', webhook);
 app.route('/upload', upload);
 app.route('/phones', phones);
 app.route('/messages', messages);
+app.route('/calls', calls);
+app.route('/subscriptions', subscriptions);
 
 // Manual trigger for Google Drive sync
 app.post('/sync', async (c) => {

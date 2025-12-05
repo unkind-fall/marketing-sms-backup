@@ -11,6 +11,7 @@ interface SmsForwarderPayload {
   content: string;
   timestamp: string;
   sim_slot?: string;
+  subscription_id?: string;
 }
 
 webhook.post('/', async (c) => {
@@ -37,6 +38,8 @@ webhook.post('/', async (c) => {
       timestamp,
       readable_date: new Date(timestamp).toISOString(),
       contact_name: null,
+      subscription_id: payload.subscription_id || null,
+      sim_slot: payload.sim_slot || null,
     });
 
     if (inserted) {

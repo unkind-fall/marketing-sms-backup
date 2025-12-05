@@ -10,7 +10,7 @@
 		{
 			"binding": "DB",
 			"database_name": "sms-backup",
-			"database_id": ""
+			"database_id": "1d9a3381-3c6a-4271-8f5f-b1a3c053a2c1"
 		}
 	],
 	"triggers": {

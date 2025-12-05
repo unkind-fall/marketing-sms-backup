@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { getMessagesByPhone, getMessageById } from '../db/queries';
+import { getMessagesByPhone, getMessageById, getPhoneHistory, getMessagesByPhoneAndSubscription, getPhoneHistoryWithSubscription } from '../db/queries';
 import { normalizePhone } from '../lib/phone-utils';
 import type { Env } from '../index';
 
@@ -16,19 +16,43 @@ messages.get('/', async (c) => {
     const { normalized } = normalizePhone(phoneQuery);
     const limit = Math.min(parseInt(c.req.query('limit') || '100', 10), 500);
     const offset = parseInt(c.req.query('offset') || '0', 10);
+    const includeCalls = c.req.query('include') === 'calls';
+    const subscriptionId = c.req.query('subscription');
 
-    const messageList = await getMessagesByPhone(c.env.DB, normalized, limit, offset);
+    if (includeCalls) {
+      const history = await getPhoneHistoryWithSubscription(c.env.DB, normalized, subscriptionId, limit, offset);
 
-    return c.json({
-      success: true,
-      phone: normalized,
-      data: messageList,
-      pagination: {
-        limit,
-        offset,
-        count: messageList.length,
-      },
-    });
+      return c.json({
+        success: true,
+        phone: normalized,
+        subscription_id: subscriptionId || null,
+        data: {
+          messages: history.messages,
+          calls: history.calls
+        },
+        pagination: {
+          limit,
+          offset,
+          messageCount: history.counts.messages,
+          callCount: history.counts.calls,
+          totalCount: history.counts.total
+        }
+      });
+    } else {
+      const messageList = await getMessagesByPhoneAndSubscription(c.env.DB, normalized, subscriptionId, limit, offset);
+
+      return c.json({
+        success: true,
+        phone: normalized,
+        subscription_id: subscriptionId || null,
+        data: messageList,
+        pagination: {
+          limit,
+          offset,
+          count: messageList.length,
+        },
+      });
+    }
   } catch (error) {
     console.error('Get messages error:', error);
     return c.json({ error: 'Failed to fetch messages' }, 500);

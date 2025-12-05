@@ -10,6 +10,7 @@ interface SmsElement {
   body: string;
   readable_date: string;
   contact_name: string;
+  sub_id?: string;
 }
 
 interface MmsElement {
@@ -18,6 +19,7 @@ interface MmsElement {
   msg_box: string;
   readable_date: string;
   contact_name: string;
+  sub_id?: string;
   parts?: {
     part: MmsPart | MmsPart[];
   };
@@ -33,6 +35,10 @@ interface ParsedXml {
     sms?: SmsElement | SmsElement[];
     mms?: MmsElement | MmsElement[];
   };
+}
+
+function getDirectionName(type: number): string {
+  return type === 1 ? 'received' : 'sent';
 }
 
 function extractMmsText(mms: MmsElement): string | null {
@@ -61,10 +67,11 @@ export async function parseXmlContent(xmlContent: string): Promise<Omit<Message,
     for (const sms of smsArray) {
       const { normalized } = normalizePhone(sms.address);
       const timestamp = parseInt(sms.date, 10);
-      const direction = parseInt(sms.type, 10);
+      const directionNum = parseInt(sms.type, 10);
+      const direction = getDirectionName(directionNum);
       const body = sms.body === 'null' ? null : sms.body;
 
-      const id = await generateMessageId(normalized, timestamp, 'sms', direction, body);
+      const id = await generateMessageId(normalized, timestamp, 'sms', directionNum, body);
 
       messages.push({
         id,
@@ -76,6 +83,8 @@ export async function parseXmlContent(xmlContent: string): Promise<Omit<Message,
         timestamp,
         readable_date: sms.readable_date === 'null' ? null : sms.readable_date,
         contact_name: sms.contact_name === '(Unknown)' ? null : sms.contact_name,
+        subscription_id: sms.sub_id || null,
+        sim_slot: null,
       });
     }
   }
@@ -88,10 +97,11 @@ export async function parseXmlContent(xmlContent: string): Promise<Omit<Message,
       const { normalized } = normalizePhone(mms.address);
       const timestamp = parseInt(mms.date, 10);
       // msg_box: 1=received, 2=sent
-      const direction = parseInt(mms.msg_box, 10);
+      const directionNum = parseInt(mms.msg_box, 10);
+      const direction = getDirectionName(directionNum);
       const body = extractMmsText(mms);
 
-      const id = await generateMessageId(normalized, timestamp, 'mms', direction, body);
+      const id = await generateMessageId(normalized, timestamp, 'mms', directionNum, body);
 
       messages.push({
         id,
@@ -103,6 +113,8 @@ export async function parseXmlContent(xmlContent: string): Promise<Omit<Message,
         timestamp,
         readable_date: mms.readable_date === 'null' ? null : mms.readable_date,
         contact_name: mms.contact_name === '(Unknown)' ? null : mms.contact_name,
+        subscription_id: mms.sub_id || null,
+        sim_slot: null,
       });
     }
   }

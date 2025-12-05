@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { parseXmlContent } from '../lib/xml-parser';
-import { batchInsertMessages, updatePhoneStats } from '../db/queries';
+import { parseCallsXml } from '../lib/call-parser';
+import { batchInsertMessages, batchInsertCalls, batchUpdatePhoneStats } from '../db/queries';
 import type { Env } from '../index';
 
 const upload = new Hono<{ Bindings: Env }>();
@@ -29,37 +30,79 @@ upload.post('/', async (c) => {
       );
     }
 
-    if (!xmlContent || !xmlContent.includes('<smses')) {
-      return c.json({ error: 'Invalid XML content' }, 400);
+    // Detect XML type by root element
+    const isCallsXml = xmlContent.includes('<calls');
+    const isMessagesXml = xmlContent.includes('<smses');
+
+    if (!xmlContent || (!isCallsXml && !isMessagesXml)) {
+      return c.json({ error: 'Invalid XML content. Expected <smses> or <calls> root element.' }, 400);
     }
 
-    const messages = await parseXmlContent(xmlContent);
+    if (isCallsXml) {
+      // Handle calls XML
+      const calls = await parseCallsXml(xmlContent);
 
-    if (messages.length === 0) {
+      if (calls.length === 0) {
+        return c.json({
+          success: true,
+          type: 'calls',
+          total: 0,
+          inserted: 0,
+          skipped: 0,
+        });
+      }
+
+      const { inserted, skipped } = await batchInsertCalls(c.env.DB, calls);
+
+      // Update phone stats for all unique phones
+      const uniquePhones = [...new Set(calls.map((c) => c.phone))];
+      const phoneStats = uniquePhones.map((phone) => ({
+        phone,
+        displayName: calls.find((c) => c.phone === phone && c.contact_name)?.contact_name,
+      }));
+      await batchUpdatePhoneStats(c.env.DB, phoneStats);
+
       return c.json({
         success: true,
-        total: 0,
-        inserted: 0,
-        skipped: 0,
+        type: 'calls',
+        total: calls.length,
+        inserted,
+        skipped,
+        uniquePhones: uniquePhones.length,
+      });
+    } else {
+      // Handle messages XML (SMS/MMS)
+      const messages = await parseXmlContent(xmlContent);
+
+      if (messages.length === 0) {
+        return c.json({
+          success: true,
+          type: 'messages',
+          total: 0,
+          inserted: 0,
+          skipped: 0,
+        });
+      }
+
+      const { inserted, skipped } = await batchInsertMessages(c.env.DB, messages);
+
+      // Update phone stats for all unique phones
+      const uniquePhones = [...new Set(messages.map((m) => m.phone))];
+      const phoneStats = uniquePhones.map((phone) => ({
+        phone,
+        displayName: messages.find((m) => m.phone === phone && m.contact_name)?.contact_name,
+      }));
+      await batchUpdatePhoneStats(c.env.DB, phoneStats);
+
+      return c.json({
+        success: true,
+        type: 'messages',
+        total: messages.length,
+        inserted,
+        skipped,
+        uniquePhones: uniquePhones.length,
       });
     }
-
-    const { inserted, skipped } = await batchInsertMessages(c.env.DB, messages);
-
-    // Update phone stats for all unique phones
-    const uniquePhones = [...new Set(messages.map((m) => m.phone))];
-    for (const phone of uniquePhones) {
-      const contactName = messages.find((m) => m.phone === phone && m.contact_name)?.contact_name;
-      await updatePhoneStats(c.env.DB, phone, contactName);
-    }
-
-    return c.json({
-      success: true,
-      total: messages.length,
-      inserted,
-      skipped,
-      uniquePhones: uniquePhones.length,
-    });
   } catch (error) {
     console.error('Upload error:', error);
     return c.json({ error: 'Failed to process upload' }, 500);
